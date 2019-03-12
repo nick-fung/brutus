@@ -36,8 +36,8 @@ int main(int argc, char *argv[]) {
     unsigned int set_associativity = atoi(argv[2]);
     unsigned int num_lines = cache_size / LINE_SIZE;
     unsigned int num_sets = num_lines / set_associativity;
-    
     unsigned int max_trials;
+
     if(argc == 4)
         max_trials = atoi(argv[3]);
     else
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
     uint32_t* keys = (uint32_t *)calloc(8,sizeof(uint32_t));
     
     /* ----------------------------Start the trials ------------------------------------ */
-    uint64_t address = 0;
+    uint64_t address;
     uint64_t encrypted_address = 0, decrypted_address = 0;
     uint32_t left_addr, right_addr;
     MCache_Entry victim;
@@ -76,7 +76,8 @@ int main(int argc, char *argv[]) {
             /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
             keys[round] = keys[round] & 0xFFFFFF; // extracted lower 24 bits
         }
-        
+
+        address = 0;
         for(uint64_t array_num = 0; array_num <= num_lines; array_num++){
             /* -------------  Step 1. Generate Addresses -------------  */
             address = address & 0xFFFFFFFFFFFF; //Ensure that the address is 48 bits long (Physical address limit)
@@ -104,7 +105,8 @@ int main(int argc, char *argv[]) {
                     //{
                     //    printf(".");
                     //}
-                    if((trial_num >0) && (!(trial_num & 0x7F)))
+                    // Display progress once every 1024 trials
+                    if((trial_num >0) && (!(trial_num & 0x3FF)))
                     {
                         printf("- %u Trials Done \n", trial_num);
                     }
@@ -115,7 +117,7 @@ int main(int argc, char *argv[]) {
             address++;
         }
     }
-    /* ------------------------  End the trails and write output to files  --------------------- */
+    /* ------------------------  End the trials and write output to files  --------------------- */
     
     
     FILE *outfile;
@@ -130,7 +132,7 @@ int main(int argc, char *argv[]) {
     for(uint64_t i = 1; i <= num_lines; i++){
         // Get cumulative sum
         results[i] += results[i-1];
-        fprintf(outfile, "%u\n", i, results[i]);
+        fprintf(outfile, "%u\n", results[i]);
     }
     
     fclose(outfile);
