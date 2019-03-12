@@ -58,14 +58,6 @@ int main(int argc, char *argv[]) {
     
     /* ------------- Generate 8 keys for Feistel Network, take from a random number generator ------------- */
     uint32_t* keys = (uint32_t *)calloc(8,sizeof(uint32_t));
-    seedMT(2000);
-    for(int round = 0; round < ROUNDS; round++)
-    {
-        /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
-        keys[round] = randomMT();
-        /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
-        keys[round] = keys[round] & 0xFFFFFF; // extracted lower 24 bits
-    }
     
     /* ----------------------------Start the trials ------------------------------------ */
     uint64_t address = 0;
@@ -76,6 +68,14 @@ int main(int argc, char *argv[]) {
     
     for(unsigned int trial_num = 0; trial_num < max_trials; trial_num++){
         invalidate_cache(L3Cache);
+        seedMT(trial_num);
+        for(int round = 0; round < ROUNDS; round++)
+        {
+            /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
+            keys[round] = randomMT();
+            /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
+            keys[round] = keys[round] & 0xFFFFFF; // extracted lower 24 bits
+        }
         
         for(uint64_t array_num = 0; array_num <= num_lines; array_num++){
             /* -------------  Step 1. Generate Addresses -------------  */
@@ -100,11 +100,11 @@ int main(int argc, char *argv[]) {
                 /* -------------  Step 4. This set overflows -------------  */
                 if(victim.valid){
                     results[array_num]++;
-                    if((trial_num > 0) && (trial_num%10==0))
-                    {
-                        printf(".");
-                    }
-                    if((trial_num >0) && ((trial_num & 0x40) ==0))
+                    //if((trial_num > 0) && (trial_num%10==0))
+                    //{
+                    //    printf(".");
+                    //}
+                    if((trial_num >0) && (!(trial_num & 0x7F)))
                     {
                         printf("- %u Trials Done \n", trial_num);
                     }
