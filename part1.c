@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     /* ---------- We read the parameters for our cache and simulation options ---------- */
     
     if(argc < 3) {
-        fprintf(stderr,"Usage: ./simCollisions CacheSizeMB SetAssociativity NumTrials\n");
+        fprintf(stderr,"Usage: ./simPart1 CacheSizeMB SetAssociativity APLR\n");
         return EXIT_FAILURE;
     }
     unsigned int cache_size_MB = atoi(argv[1]);
@@ -36,12 +36,11 @@ int main(int argc, char *argv[]) {
     unsigned int set_associativity = atoi(argv[2]);
     unsigned int num_lines = cache_size / LINE_SIZE;
     unsigned int num_sets = num_lines / set_associativity;
-    unsigned int max_trials;
+    unsigned int max_trials = 10000;
+    unsigned int APLR = 0;
 
     if(argc == 4)
-        max_trials = atoi(argv[3]);
-    else
-        max_trials = 10000;
+        APLR = atoi(argv[3]);
     
     unsigned int *results = (unsigned int*) calloc(sizeof(unsigned int), num_lines);
     
@@ -50,6 +49,7 @@ int main(int argc, char *argv[]) {
     printf("Number of Cache Lines: %d lines\n", num_lines);
     printf("Number of Sets: %d sets\n", num_sets);
     printf("Number of Trials: %d trials\n", max_trials);
+    printf("Accesses Per Line Remapping: %d accesses\n", APLR);
     
     
     /* --------------------- Setup the cache ------------------------- */
@@ -101,11 +101,11 @@ int main(int argc, char *argv[]) {
                 /* -------------  Step 4. This set overflows -------------  */
                 if(victim.valid){
                     results[address]++;
-                    if((trial_num >0) && (!(trial_num & 0x3FF)))
-                    {
-                        printf("- %u Trials Done \n", trial_num);
-                    }
-                    fflush(stdout);
+                    //if((trial_num >0) && (!(trial_num & 0x3FF)))
+                    //{
+                    //    printf("- %u Trials Done \n", trial_num);
+                    //}
+                    //fflush(stdout);
                     // This trial is finished
                     break;
                 }
@@ -117,8 +117,7 @@ int main(int argc, char *argv[]) {
     
     FILE *outfile;
     char *outName = (char*) calloc(256,sizeof(char));
-    sprintf(outName, "results_%d_%d_%d.csv",cache_size_MB,set_associativity,max_trials);
-    fprintf(stderr,"Outputting results to %s as output file\n", outName);
+    sprintf(outName, "part1_results_%d_%d.csv",cache_size_MB,set_associativity);
     outfile = fopen(outName,"w");
     if(!outfile) {
         perror("fopen");
@@ -129,7 +128,8 @@ int main(int argc, char *argv[]) {
         results[i] += results[i-1];
         fprintf(outfile, "%u\n", results[i-1]);
     }
-    
+    printf("Part 1 profiling for a %d MB, %d-way cache complete, %d trials ran\n", cache_size_MB, set_associativity, max_trials);
+
     fclose(outfile);
     
     return 0;
