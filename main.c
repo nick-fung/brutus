@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     /* ---------- We read the parameters for our cache and simulation options ---------- */
     
     if(argc < 3) {
-        fprintf(stderr,"Usage: ./simCollisions CacheSizeMB SetAssociativity Trials\n");
+        fprintf(stderr,"Usage: ./simCollisions CacheSizeMB SetAssociativity NumTrials\n");
         return EXIT_FAILURE;
     }
     unsigned int cache_size_MB = atoi(argv[1]);
@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
     else
         max_trials = 10000;
     
-    unsigned int *results = (unsigned int*) calloc(sizeof(unsigned int), num_lines+1);
+    unsigned int *results = (unsigned int*) calloc(sizeof(unsigned int), num_lines);
     
     printf("Cache Size: %d bytes\n", cache_size);
     printf("Set Associativity: %d-way\n", set_associativity);
@@ -77,8 +77,8 @@ int main(int argc, char *argv[]) {
             keys[round] = keys[round] & 0xFFFFFF; // extracted lower 24 bits
         }
 
-        address = 0;
-        for(uint64_t array_num = 0; array_num <= num_lines; array_num++){
+        // Access an array in sequence
+        for(address = 0; address <= num_lines; address++){
             /* -------------  Step 1. Generate Addresses -------------  */
             address = address & 0xFFFFFFFFFFFF; //Ensure that the address is 48 bits long (Physical address limit)
             
@@ -100,21 +100,16 @@ int main(int argc, char *argv[]) {
                 victim=install(L3Cache, encrypted_address, 0,true, MODE, LINE_SIZE);
                 /* -------------  Step 4. This set overflows -------------  */
                 if(victim.valid){
-                    results[array_num]++;
-                    //if((trial_num > 0) && (trial_num%10==0))
-                    //{
-                    //    printf(".");
-                    //}
-                    // Display progress once every 1024 trials
+                    results[address]++;
                     if((trial_num >0) && (!(trial_num & 0x3FF)))
                     {
                         printf("- %u Trials Done \n", trial_num);
                     }
                     fflush(stdout);
+                    // This trial is finished
                     break;
                 }
             }
-            address++;
         }
     }
     /* ------------------------  End the trials and write output to files  --------------------- */
@@ -132,7 +127,7 @@ int main(int argc, char *argv[]) {
     for(uint64_t i = 1; i <= num_lines; i++){
         // Get cumulative sum
         results[i] += results[i-1];
-        fprintf(outfile, "%u\n", results[i]);
+        fprintf(outfile, "%u\n", results[i-1]);
     }
     
     fclose(outfile);
