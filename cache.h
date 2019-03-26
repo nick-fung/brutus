@@ -19,6 +19,9 @@
 #define MCACHE_PSEL_MAX    1023
 #define MCACHE_LEADER_SETS  32
 
+#define FEISTEL_ROUNDS 8
+#define NEXTKEY_MASK 0x10
+
 typedef unsigned uns;
 typedef unsigned char uns8;
 typedef unsigned short uns16;
@@ -40,6 +43,8 @@ typedef int64 SCounter;
 typedef struct MCache_Entry {
     Flag valid;
     Flag dirty;
+    // CEASER
+    Flag NextKey;
     Addr tag;
     Addr pc;
     uns ripctr;
@@ -86,10 +91,21 @@ typedef struct MCache {
     int touched_wayid;
     int touched_setid;
     int touched_lineid;
+
+    // CEASER Modifications
+    uns EpochID; // Epoch ID - for seed generation
+    uns SPtr; // Set-Relocation Pointer
+    uns64 ACtr; // Access-Counter
+    uns APLR; // Accesses-Per-Line-Remap
+
+    uint32_t *curr_keys;
+    uint32_t *next_keys;
+
+
 } MCache;
 
 
-void init_cache(MCache* c, uns sets, uns assocs, uns repl, uns block_size, Flag yacc_mode);
+void init_cache(MCache* c, uns sets, uns assocs, uns repl, uns block_size, uns APLR, Flag yacc_mode);
 void invalidate_cache (MCache* c);
 bool isHit(MCache* cache, Addr addr, Flag dirty,Flag yacc_mode);
 MCache_Entry install(MCache* cache, Addr addr, Addr pc, Flag dirty, Flag yacc_mode, uns comp_size);

@@ -54,70 +54,40 @@ int main(int argc, char *argv[]) {
     
     /* --------------------- Setup the cache ------------------------- */
     MCache *L3Cache = (MCache*) calloc(1, sizeof(MCache));
-    init_cache(L3Cache, num_sets, set_associativity, REPL, LINE_SIZE ,MODE);
-    
-    /* ------------- Generate 8 keys for Feistel Network, take from a random number generator ------------- */
-    uint32_t* keys = (uint32_t *)calloc(8,sizeof(uint32_t));
+    init_cache(L3Cache, num_sets, set_associativity, REPL, LINE_SIZE, APLR, MODE);
     
     /* ----------------------------Start the trials ------------------------------------ */
     uint64_t address;
-    uint64_t encrypted_address = 0, decrypted_address = 0;
-    uint32_t left_addr, right_addr;
     MCache_Entry victim;
     bool L3Hit = false;
     
     for(unsigned int trial_num = 0; trial_num < max_trials; trial_num++){
-        invalidate_cache(L3Cache);
-        seedMT(trial_num);
-        for(int round = 0; round < ROUNDS; round++)
-        {
-            /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
-            keys[round] = randomMT();
-            /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
-            keys[round] = keys[round] & 0xFFFFFF; // extracted lower 24 bits
-        }
-
         // Access an array in sequence
+
         for(address = 0; address <= num_lines; address++){
+
             /* -------------  Step 1. Generate Addresses -------------  */
             address = address & 0xFFFFFFFFFFFF; //Ensure that the address is 48 bits long (Physical address limit)
-            
-            /* -------------  Step 2. Pass these addresses through a Feistel Cipher -------------  */
-            left_addr = (uint32_t)((address & 0xFFFFFF000000) >> 24);
-            right_addr = (uint32_t)(address & 0x000000FFFFFF);
-            encrypted_address = encrypt(left_addr, right_addr, ROUNDS, keys);
-            
-            // The code commented is for purpose of testing only //
 
-            /* left_addr = (uint32_t)((encrypted_address & 0xFFFFFF000000) >> 24);
-            right_addr = (uint32_t)(encrypted_address & 0x000000FFFFFF);
-            decrypted_address = decrypt(left_addr, right_addr, ROUNDS, keys);
-            printf("Address: %llx \t | Enc_Address: %llx \t | Dec_Address: %llx\n",address, encrypted_address, decrypted_address); */
-            
-            /* -------------  Step 3. Access the cache with Encrypted Address -------------  */
-            L3Hit = isHit(L3Cache, encrypted_address, false, MODE);
+            // Track how many addresses required for creating an eviction set
+            L3Hit = isHit(L3Cache, address, false, MODE);
             if(!L3Hit){
-                victim=install(L3Cache, encrypted_address, 0,true, MODE, LINE_SIZE);
+                victim=install(L3Cache, address, 0,true, MODE, LINE_SIZE);
                 /* -------------  Step 4. This set overflows -------------  */
                 if(victim.valid){
                     results[address]++;
-                    //if((trial_num >0) && (!(trial_num & 0x3FF)))
-                    //{
-                    //    printf("- %u Trials Done \n", trial_num);
-                    //}
-                    //fflush(stdout);
-                    // This trial is finished
                     break;
                 }
             }
         }
+        invalidate_cache(L3Cache);
     }
     /* ------------------------  End the trials and write output to files  --------------------- */
     
     
     FILE *outfile;
     char *outName = (char*) calloc(256,sizeof(char));
-    sprintf(outName, "part1_results_%d_%d.csv",cache_size_MB,set_associativity);
+    sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity, APLR);
     outfile = fopen(outName,"w");
     if(!outfile) {
         perror("fopen");

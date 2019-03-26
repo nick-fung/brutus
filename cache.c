@@ -8,9 +8,11 @@
 #include "assert.h"
 #include "stdio.h"
 #include <string.h>
+#include "feistel.h"
+#include "mersenne.h"
 
 
-void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, Flag yacc_mode)
+void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, uns APLR, Flag yacc_mode)
 {
 
     c->sets    = sets;
@@ -26,6 +28,32 @@ void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, 
     //for drrip or dip
     mcache_select_leader_sets(c,sets);
     c->psel=(MCACHE_PSEL_MAX+1)/2;
+
+    // for CEASER
+    c->EpochID = 0;
+    c->SPtr = 0;
+    c->ACtr = 0;
+    c->APLR = APLR;
+
+    // Creates the round keys for the Feistel networks (one for each current and next epoch)
+    c->curr_keys = (uint32_t *) calloc(FEISTEL_ROUNDS, sizeof(uint32_t));
+    seedMT(0);
+    for(int round = 0; round < FEISTEL_ROUNDS; round++){
+        /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
+        c->curr_keys[round] = randomMT();
+        /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
+        c->curr_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+    }
+    c->next_keys = (uint32_t *) calloc(FEISTEL_ROUNDS, sizeof(uint32_t));
+    seedMT(1);
+    for(int round = 0; round < FEISTEL_ROUNDS; round++){
+        /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
+        c->next_keys[round] = randomMT();
+        /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
+        c->next_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+    }
+
+
 }
 
 void invalidate_cache(MCache* c)
@@ -33,13 +61,33 @@ void invalidate_cache(MCache* c)
     for(unsigned long long int i = 0; i < (c->sets * c->assocs); i++)
     {
         c->entries[i].valid=false;
+        c->entries[i].NextKey=false;
+    }
+    c->SPtr = 0;
+    c->ACtr = 0;
+    c->EpochID++;
+    seedMT(c->EpochID);
+    for(int round = 0; round < FEISTEL_ROUNDS; round++){
+        /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
+        c->curr_keys[round] = randomMT();
+        /* as addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
+        c->curr_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+    }
+    seedMT(c->EpochID+1);
+    for(int round = 0; round < FEISTEL_ROUNDS; round++){
+        /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
+        c->next_keys[round] = randomMT();
+        /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
+        c->next_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
     }
 }
 
 bool isHit(MCache *cache, Addr addr, Flag is_write, Flag yacc_mode)
 {
-    Addr tag = addr;
     bool isHit=false;
+    Addr tag = addr; 
+    
+
     
     if(yacc_mode)
         isHit=mcache_access_yacc(cache,tag,is_write); 
@@ -50,6 +98,7 @@ bool isHit(MCache *cache, Addr addr, Flag is_write, Flag yacc_mode)
         cache->s_write++;
     else
         cache->s_read++;
+
 
     return isHit;
 }
@@ -105,17 +154,90 @@ void mcache_select_leader_sets(MCache *c, uns sets){
 
 bool mcache_access(MCache *c, Addr addr, Flag dirty)
 {
-    uns64 offset = c->lineoffset;
-    Addr  tag  = addr; // full tags
-    uns   set  = mcache_get_index(c,tag);
-    uns   start = set * c->assocs;
-    uns   end   = start + c->assocs;
+
+    uns   set;
+    uns   start;
+    uns   end;
     uns   ii;
+    Addr tag;
+
+    uint32_t left_addr;
+    uint32_t right_addr;
+
+    /*
+    left_addr = (uint32_t)((tag & 0xFFFFFF000000) >> 24);
+    right_addr = (uint32_t)(tag & 0x000000FFFFFF);
+    tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
+    left_addr = (uint32_t)((tag & 0xFFFFFF000000) >> 24);
+    right_addr = (uint32_t)(tag & 0x000000FFFFFF);
+    if(addr != decrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys)){
+        printf("Turns out Feistel isn't invertible!\n");
+        exit(-1);
+    }
+    */
+
+    // If using CEASER
+    if(c->APLR){
+        // If we reached APLR accesses, we remap a set
+        if(++c->ACtr >= c->APLR){
+            set = c->SPtr;
+            start = set * c->assocs;
+            end = start + c-> assocs;
+            for (ii=start; ii<end; ii++){
+                MCache_Entry *entry = &c->entries[ii];
+                if(entry->valid && !(entry->NextKey))
+                {
+                    entry->valid = false;
+                    tag = entry->tag;
+                    left_addr = (uint32_t)((tag & 0xFFFFFF000000) >> 24);
+                    right_addr = (uint32_t)(tag & 0x000000FFFFFF);
+                    tag = decrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
+                    mcache_install(c, tag, 0, (Flag) (entry->dirty | NEXTKEY_MASK));
+                }
+            }
+            // Update set pointer and reset access counter
+            c->ACtr = 0;
+            if(++c->SPtr == c->sets){
+                c->SPtr = 0;
+                c->EpochID++;
+                // Swap pointers and recreate new keys
+                uint32_t *tmp = c->curr_keys;
+                c->curr_keys = c->next_keys;
+                c->next_keys = tmp;
+                seedMT(c->EpochID+1);
+                for(int round = 0; round < FEISTEL_ROUNDS; round++){
+                    /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
+                    c->next_keys[round] = randomMT();
+                    /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
+                    c->next_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+                }
+            }
+        }
+    }
+
+
+    // Split address into two 24 bits for encryption
+    left_addr = (uint32_t)((addr & 0xFFFFFF000000) >> 24);
+    right_addr = (uint32_t)(addr & 0x000000FFFFFF);
+    tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
+    set  = mcache_get_index(c,tag);
+    Flag NextKey = 0;
+
+    // If we are using CEASER
+    if(c->APLR && set < c->SPtr){
+        tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->next_keys);
+        NextKey = 1;
+        set = mcache_get_index(c, tag);
+    }
+
+    start = set * c->assocs;
+    end   = start + c->assocs;
+
     c->s_count++;
 
     for (ii=start; ii<end; ii++){
         MCache_Entry *entry = &c->entries[ii];
-        if(entry->valid && (entry->tag == tag))
+        if(entry->valid && (entry->tag == tag) && (entry->NextKey == NextKey))
         {
             entry->last_access  = c->s_count;
             entry->ripctr       = MCACHE_SRRIP_MAX;
@@ -129,6 +251,7 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
             return true;
         }
     }
+
     //even on a miss, we need to know which set was accessed
     c->touched_wayid = 0;
     c->touched_setid = set;
@@ -239,6 +362,7 @@ Flag mcache_invalidate    (MCache *c, Addr addr)
         if(entry->valid && (entry->tag == tag))
         {
             entry->valid = FALSE;
+            entry->NextKey = 0;
             return TRUE;
         }
     }
@@ -323,9 +447,26 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     MCache_Entry *entry;
     MCache_Entry evicted_entry;
 
+    // Split address into two 24 bits for encryption
+    uint32_t left_addr = (uint32_t)((addr & 0xFFFFFF000000) >> 24);
+    uint32_t right_addr = (uint32_t)(addr & 0x000000FFFFFF);
+    tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
+    set  = mcache_get_index(c,tag);
+    Flag NextKey = 0;
+
+    // If we are using CEASER
+    if(c->APLR && set < c->SPtr || (dirty & NEXTKEY_MASK)){
+        tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->next_keys);
+        NextKey = 1;
+        set = mcache_get_index(c, tag);
+    }
+
+    start = set * c->assocs;
+    end   = start + c->assocs;
+
     for (ii=start; ii<end; ii++){
         entry = &c->entries[ii];
-        if(entry->valid && (entry->tag == tag)){
+        if(entry->valid && (entry->tag == tag) && (entry->NextKey == NextKey)){
             fprintf(stderr,"Installed entry already with addr:%llx present in set:%u\n", addr, set);
             exit(-1);
         }
@@ -354,7 +495,12 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     }
 
 
-    //put new information in
+    // Put new information in
+    if(dirty & NEXTKEY_MASK){
+        entry->NextKey = 1;
+        dirty ^= NEXTKEY_MASK;
+    }
+
     entry->tag   = tag;
     entry->valid = TRUE;
     entry->pc    = pc;
@@ -368,8 +514,6 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
         entry->last_access  = c->s_count;
     }
 
-
-    
     c->fifo_ptr[set] = (c->fifo_ptr[set]+1)%c->assocs; // fifo update
 
     c->touched_lineid=victim;

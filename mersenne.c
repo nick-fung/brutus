@@ -53,10 +53,11 @@ static int      left = -1;      // can *next++ this many times before reloading
 
 void seedMT(uint32_t seed)
 {
-        register uint32_t x = (seed | 1U) & 0xFFFFFFFFU, *s = state;
-        register int    j;
+    seed <<= 1;
+    register uint32_t x = (seed | 1U) & 0xFFFFFFFFU, *s = state;
+    register int    j;
 
-        for(left=0, *s++=x, j=N; --j;
+    for(left=0, *s++=x, j=N; --j;
                         *s++ = (x*=69069U) & 0xFFFFFFFFU);
 }
 
