@@ -6,14 +6,11 @@
  we generate a 24 bit value and thereby stick to a 48 bit physical address ---- */
 
 inline uint32_t f(uint32_t block, uint32_t key) {
-	uint32_t seed_init = block;
-	uint32_t rand = 0;
+	uint32_t rand;
 	
-	//seedMT(seed_init*key);
 	seedMT(block*key);
 	rand = randomMT();
     return (block^key^(rand & 0xFFFFFF));
-    //return (block^key);
 }
 
 uint64_t encrypt(uint32_t left, uint32_t right, uint32_t rounds, uint32_t keys[]) {

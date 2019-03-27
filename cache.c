@@ -12,7 +12,7 @@
 #include "mersenne.h"
 
 
-void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, uns APLR, Flag yacc_mode)
+void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, uns APLR)
 {
 
     c->sets    = sets;
@@ -40,17 +40,17 @@ void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, 
     seedMT(0);
     for(int round = 0; round < FEISTEL_ROUNDS; round++){
         /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
-        c->curr_keys[round] = randomMT();
+        c->curr_keys[round] = randomMT()& 0xFFFFFF;
         /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
-        c->curr_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+        c->curr_keys[round] = 0xFFFFFF; // extracted lower 24 bits
     }
-    c->next_keys = (uint32_t *) calloc(FEISTEL_ROUNDS, sizeof(uint32_t));
-    seedMT(1);
-    for(int round = 0; round < FEISTEL_ROUNDS; round++){
-        /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
-        c->next_keys[round] = randomMT();
-        /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
-        c->next_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+    // If dynamically remapping
+    if(APLR){
+        c->next_keys = (uint32_t *) calloc(FEISTEL_ROUNDS, sizeof(uint32_t));
+        seedMT(1);
+        for(int round = 0; round < FEISTEL_ROUNDS; round++){
+            c->next_keys[round] = randomMT() & 0xFFFFFF;
+        }
     }
 
 
@@ -65,34 +65,26 @@ void invalidate_cache(MCache* c)
     }
     c->SPtr = 0;
     c->ACtr = 0;
-    c->EpochID++;
+    c->EpochID += 2;
     seedMT(c->EpochID);
     for(int round = 0; round < FEISTEL_ROUNDS; round++){
         /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
-        c->curr_keys[round] = randomMT();
-        /* as addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
-        c->curr_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+        c->curr_keys[round] = randomMT() & 0xFFFFFF;
     }
-    seedMT(c->EpochID+1);
-    for(int round = 0; round < FEISTEL_ROUNDS; round++){
-        /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
-        c->next_keys[round] = randomMT();
-        /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
-        c->next_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+    if(c->APLR){
+        seedMT(c->EpochID+1);
+        for(int round = 0; round < FEISTEL_ROUNDS; round++){
+            c->next_keys[round] = randomMT() & 0xFFFFFF;
+        }
     }
 }
 
-bool isHit(MCache *cache, Addr addr, Flag is_write, Flag yacc_mode)
+bool isHit(MCache *cache, Addr addr, Flag is_write)
 {
     bool isHit=false;
     Addr tag = addr; 
-    
 
-    
-    if(yacc_mode)
-        isHit=mcache_access_yacc(cache,tag,is_write); 
-    else
-        isHit=mcache_access(cache,tag,is_write); 
+    isHit=mcache_access(cache,tag,is_write); 
 
     if(is_write)
         cache->s_write++;
@@ -103,30 +95,18 @@ bool isHit(MCache *cache, Addr addr, Flag is_write, Flag yacc_mode)
     return isHit;
 }
 
-MCache_Entry install(MCache *cache, Addr addr, Addr pc, Flag is_write, Flag yacc_mode, uns comp_size)
+MCache_Entry install(MCache *cache, Addr addr, Addr pc, Flag is_write)
 {
     Addr tag = addr;
     MCache_Entry victim;
 
-    if(yacc_mode)
-    {
-        if(comp_size<=16)
-            comp_size=16;
-        else if(comp_size<=32)
-            comp_size=32;
-        else
-            comp_size=64;
+    victim = mcache_install(cache,tag,pc,is_write);
 
-        victim = mcache_install_yacc(cache,tag,pc,is_write,comp_size);
-    }
-    else
-        victim = mcache_install(cache,tag,pc,is_write);
     return victim;
 }
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
 
-void mcache_select_leader_sets(MCache *c, uns sets){
+void mcache_select_leader_sets(MCache *c, uns sets)
+{
     uns done=0;
 
     c->is_leader_p0  = (Flag *) calloc (sets, sizeof(Flag));
@@ -161,19 +141,14 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     uns   ii;
     Addr tag;
 
+    // Encryption/decryption
     uint32_t left_addr;
     uint32_t right_addr;
+    // CEASER only
+    Flag NextKey = 0;
 
-    left_addr = (uint32_t)((tag & 0xFFFFFF000000) >> 24);
-    right_addr = (uint32_t)(tag & 0x000000FFFFFF);
-    tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
-    left_addr = (uint32_t)((tag & 0xFFFFFF000000) >> 24);
-    right_addr = (uint32_t)(tag & 0x000000FFFFFF);
-    if(addr != decrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys)){
-        printf("Turns out Feistel isn't invertible!\n");
-        exit(-1);
-    }
 
+    // TODO: CODE CHECK
     // If using CEASER
     if(c->APLR){
         // If we reached APLR accesses, we remap a set
@@ -219,7 +194,6 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     right_addr = (uint32_t)(addr & 0x000000FFFFFF);
     tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
     set  = mcache_get_index(c,tag);
-    Flag NextKey = 0;
 
     // If we are using CEASER
     if(c->APLR && set < c->SPtr){
@@ -259,42 +233,6 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     return false;
 }
 
-bool mcache_access_yacc(MCache *c, Addr addr, Flag dirty)
-{
-    uns64 offset = c->lineoffset;
-    Addr  sb_tag  = addr >> (offset+2); // full tags, offset for super block tag:(offset+2)
-    uns   set  = mcache_get_index(c,sb_tag);
-    uns   block_id = (addr >>(offset) & 0x3); //block id
-    uns   start = set * c->assocs;
-    uns   end   = start + c->assocs;
-    uns   ii;
-    c->s_count++;
-
-    for (ii=start; ii<end; ii++){
-        MCache_Entry *entry = &c->entries[ii];
-        if(entry->valid && (entry->tag == sb_tag) 
-                && (entry->block_valid[block_id]==1))  //check block valid bit
-        {
-            entry->last_access  = c->s_count;
-            entry->ripctr       = MCACHE_SRRIP_MAX;
-            c->touched_wayid = (ii-start);
-            c->touched_setid = set;
-            c->touched_lineid = ii;
-            if(dirty==TRUE) //If the operation is a WB then mark it as dirty
-            {
-                mcache_mark_dirty_yacc(c,sb_tag,set,block_id);
-            }
-            return true;
-        }
-    }
-    //even on a miss, we need to know which set was accessed
-    c->touched_wayid = 0;
-    c->touched_setid = set;
-    c->touched_lineid = start;
-
-    c->s_miss++;
-    return false;
-}
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
@@ -320,27 +258,6 @@ Flag mcache_probe    (MCache *c, Addr addr)
 }
 
 
-Flag mcache_probe_yacc    (MCache *c, Addr addr)
-{
-    uns64 offset = c->lineoffset;
-    Addr  sb_tag  = addr>>(offset+2); // super block tag 
-    uns   set  = mcache_get_index(c,sb_tag);
-    Addr  block_id = (addr>>offset)&0x3;
-    uns   start = set * c->assocs;
-    uns   end   = start + c->assocs;
-    uns   ii;
-
-    for (ii=start; ii<end; ii++){
-        MCache_Entry *entry = &c->entries[ii];
-        if(entry->valid && (entry->tag == sb_tag)
-                &&(entry->block_valid[block_id]==1)) //check block valid bit
-        {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
 
 
 ////////////////////////////////////////////////////////////////////
@@ -407,23 +324,6 @@ Flag mcache_mark_dirty    (MCache *c, Addr tag)
     return FALSE;
 }
 
-Flag mcache_mark_dirty_yacc (MCache *c, Addr tag, Addr set, uns block_id)
-{
-    uns   start = set * c->assocs;
-    uns   end   = start + c->assocs;
-    uns   ii;
-
-    for (ii=start; ii<end; ii++){
-        MCache_Entry *entry = &c->entries[ii];
-        if(entry->valid && (entry->tag == tag) && entry->block_valid[block_id])
-        {
-            entry->block_dirty[block_id] = TRUE;
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -453,7 +353,7 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     Flag NextKey = 0;
 
     // If we are using CEASER
-    if(c->APLR && set < c->SPtr || (dirty & NEXTKEY_MASK)){
+    if(c->APLR && (set < c->SPtr || (dirty & NEXTKEY_MASK))){
         tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->next_keys);
         NextKey = 1;
         set = mcache_get_index(c, tag);
@@ -524,133 +424,6 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
 }
 
 
-MCache_Entry mcache_install_yacc(MCache *c, Addr addr, Addr pc, Flag dirty, uns comp_size)
-{
-    uns64 offset = c->lineoffset;
-    Addr  sb_tag = addr>>(offset+2);  //calculate the super block tag
-    Addr  block_id = (addr>>offset) &0x3;
-    uns   set  = mcache_get_index(c,sb_tag); // use super block tag to get the set number
-    uns   start = set * c->assocs;
-    uns   end   = start + c->assocs;
-    uns   ii, victim;
-
-    Flag update_lrubits=TRUE;
-
-    MCache_Entry *entry;
-    MCache_Entry evicted_entry;
-
-    for (ii=start; ii<end; ii++){
-        entry = &c->entries[ii];
-        if(entry->valid && (entry->tag == sb_tag))
-        {
-            if((entry->block_valid[block_id]==1)){ //YACC need to check the block valid bit
-                fprintf(stderr,"YACC Installed entry already with addr:%llx present in set:%u tag:%llx block_id:%u\n", addr, set, sb_tag, block_id);
-                exit(-1);
-            }
-
-            //A super block associated to new cache line is already in the cache, so check whether there is a room in this super block for the cache line
-            bool has_room=false;
-            if(comp_size==entry->comp_size) //the compressed cache size should be the same in a data block
-            {
-                if(comp_size<=16 && entry->block_cnt<=3)
-                    has_room=true;
-                else if(comp_size<=32 && entry->block_cnt==2)
-                    has_room=true;
-                else if (comp_size<=64)
-                    has_room=false;
-                else
-                {
-                    fprintf(stderr,"unsupported comp size: %d!\n",comp_size);
-                    exit(-1);
-                }
-             }
-
-            if(has_room==true)
-            {
-                if(comp_size<=16)
-                    entry->block_cnt++;
-                else if(comp_size<=32)
-                    entry->block_cnt+=2;
-                else if(comp_size<=64)
-                {
-                    fprintf(stderr,"there should not be any room!\n");
-                    exit(-1);
-                }
-                entry->block_valid[block_id]=1;
-
-                //set the dirty bit if needed
-                if(dirty)
-                    entry->block_dirty[block_id]=1;
-
-                //printf("new compressed cache line is installed, addr:%llx tag:%llx set:%d block_id:%d comp_size:%d\n",addr,sb_tag,set, block_id, comp_size);
-                return evicted_entry; //we install the compressed cache line in a data block. so just return empty entry (valid bit should be 0)
-            }
-         }
-    }
-
-    // find victim and install entry
-    victim = mcache_find_victim(c, set);
-    entry = &c->entries[victim];
-    evicted_entry =c->entries[victim];
-
-
-    //printf("victim cache line, tag:%llx set:%d\n",entry->tag,set);
-    if(entry->valid){
-        c->s_evict++;
-
-        if(entry->dirty)
-            c->s_writeback++;
-    }
-    
-
-    uns ripctr_val=MCACHE_SRRIP_INIT;
-
-    if(c->repl_policy==REPL_DRRIP){
-        ripctr_val=mcache_drrip_get_ripctrval(c,set);
-    }
-
-    if(c->repl_policy==REPL_DIP){
-        update_lrubits=mcache_dip_check_lru_update(c,set);
-    }
-
-
-    //put new information in
-    entry->tag   = sb_tag;
-    entry->valid = TRUE;
-    entry->block_valid[block_id]=TRUE;
-    entry->pc    = pc;
-
-    entry->comp_size=comp_size;
-    //printf("new cache line is installed, addr:%llx tag:%llx set:%d block_id:%d\n",addr,sb_tag,set, block_id);
-    
-    if(comp_size<=16)
-        entry->block_cnt++;
-    else if(comp_size<=32)
-        entry->block_cnt+=2;
-    else if(comp_size<=64)
-        entry->block_cnt+=4;
-
-    
-    if(dirty==TRUE)
-        entry->block_dirty[block_id]=TRUE;
-    else
-        entry->block_dirty[block_id] = FALSE;
-
-    entry->ripctr  = ripctr_val;
-
-    if(update_lrubits){
-        entry->last_access  = c->s_count;
-    }
-
-
-    c->fifo_ptr[set] = (c->fifo_ptr[set]+1)%c->assocs; // fifo update
-
-    c->touched_lineid=victim;
-    c->touched_setid=set;
-    c->touched_wayid=victim-(set*c->assocs);
-
-    return evicted_entry;
-}
 
 
 ////////////////////////////////////////////////////////////

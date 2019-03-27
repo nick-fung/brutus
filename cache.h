@@ -2,8 +2,8 @@
 // Created by Seokin Hong on 3/29/18.
 //
 
-#ifndef SRC_CACHE_HPP
-#define SRC_CACHE_HPP
+#ifndef CACHE_H
+#define CACHE_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -49,10 +49,6 @@ typedef struct MCache_Entry {
     Addr pc;
     uns ripctr;
     uns64 last_access;
-    uns block_valid[4]; //block id used in YACC
-    uns block_dirty[4]; //dirty bit for blocks
-    uns comp_size; //compressed cache size 
-    uns block_cnt;
 } MCache_Entry;
 
 typedef enum MCache_ReplPolicy_Enum {
@@ -105,30 +101,19 @@ typedef struct MCache {
 } MCache;
 
 
-void init_cache(MCache* c, uns sets, uns assocs, uns repl, uns block_size, uns APLR, Flag yacc_mode);
+void init_cache(MCache* c, uns sets, uns assocs, uns repl, uns block_size, uns APLR);
 void invalidate_cache (MCache* c);
-bool isHit(MCache* cache, Addr addr, Flag dirty,Flag yacc_mode);
-MCache_Entry install(MCache* cache, Addr addr, Addr pc, Flag dirty, Flag yacc_mode, uns comp_size);
-
-//void setData(uint64_t addr, uint8_t* data, int data_size);
-//uint8_t* getData(uint64_t addr);
-//void clearData(uint64_t addr);
-
-
-//uns64 m_offset;
-//std::map<uint64_t, uint8_t*> data_array;
+bool isHit(MCache* cache, Addr addr, Flag dirty);
+MCache_Entry install(MCache* cache, Addr addr, Addr pc, Flag dirty);
 
 MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty);
-MCache_Entry mcache_install_yacc(MCache *c, Addr addr, Addr pc, Flag dirty, uns comp_size);
 void mcache_new(MCache* c, uns sets, uns assocs, uns linesize, uns repl);
 bool mcache_access(MCache *c, Addr addr, Flag dirty);  //true: hit, false: miss
-bool mcache_access_yacc(MCache *c, Addr addr, Flag dirty);  //true: hit, false: miss
 Flag mcache_probe(MCache *c, Addr addr);
 
 Flag mcache_invalidate(MCache *c, Addr addr);
 
 Flag mcache_mark_dirty(MCache *c, Addr addr);
-Flag mcache_mark_dirty_yacc(MCache *c, Addr addr, Addr set, uns block_id);
 
 uns mcache_get_index(MCache *c, Addr addr);
 
@@ -151,5 +136,4 @@ uns mcache_drrip_get_ripctrval(MCache *c, uns set);
 Flag mcache_dip_check_lru_update(MCache *c, uns set);
 
 
-
-#endif //SRC_CACHE_HPP
+#endif // CACHE_H

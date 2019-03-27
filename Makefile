@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS= -g -I. -lm #-O4
+CFLAGS= -g -I. -lm -O4
 DEPS = feistel.h mersenne.h cache.h
 OBJ = part1.o feistel.o mersenne.o cache.o
 OBJ2 = part2.o feistel.o mersenne.o cache.o

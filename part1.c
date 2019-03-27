@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
     
     /* --------------------- Setup the cache ------------------------- */
     MCache *L3Cache = (MCache*) calloc(1, sizeof(MCache));
-    init_cache(L3Cache, num_sets, set_associativity, REPL, LINE_SIZE, APLR, MODE);
+    init_cache(L3Cache, num_sets, set_associativity, REPL, LINE_SIZE, APLR);
     
     /* ----------------------------Start the trials ------------------------------------ */
     uint64_t address;
@@ -67,15 +67,20 @@ int main(int argc, char *argv[]) {
         for(address = 0; address <= num_lines; address++){
 
             /* -------------  Step 1. Generate Addresses -------------  */
-            address = address & 0xFFFFFFFFFFFF; //Ensure that the address is 48 bits long (Physical address limit)
+            address &= 0xFFFFFFFFFFFF; //Ensure that the address is 48 bits long (Physical address limit)
 
             // Track how many addresses required for creating an eviction set
-            L3Hit = isHit(L3Cache, address, false, MODE);
+            L3Hit = isHit(L3Cache, address, false);
             if(!L3Hit){
-                victim=install(L3Cache, address, 0,true, MODE, LINE_SIZE);
+                victim=install(L3Cache, address, 0,true);
                 /* -------------  Step 4. This set overflows -------------  */
                 if(victim.valid){
                     results[address]++;
+                    if(trial_num % 256 == 0){
+                        printf(".");
+                        if(trial_num % 512 == 0)
+                            printf("Completed Trial Num %d", trial_num);
+                    }
                     break;
                 }
             }
