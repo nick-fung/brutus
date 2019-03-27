@@ -135,5 +135,6 @@ uns mcache_drrip_get_ripctrval(MCache *c, uns set);
 
 Flag mcache_dip_check_lru_update(MCache *c, uns set);
 
+void print_cache_stats(MCache * llcache);
 
 #endif // CACHE_H

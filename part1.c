@@ -76,11 +76,8 @@ int main(int argc, char *argv[]) {
                 /* -------------  Step 4. This set overflows -------------  */
                 if(victim.valid){
                     results[address]++;
-                    if(trial_num % 256 == 0){
-                        printf(".");
-                        if(trial_num % 512 == 0)
-                            printf("Completed Trial Num %d", trial_num);
-                    }
+                    if(trial_num % 512 == 0)
+                        printf("Completed Trial Num %d for APLR %d\n", trial_num, APLR);
                     break;
                 }
             }
@@ -103,9 +100,10 @@ int main(int argc, char *argv[]) {
         results[i] += results[i-1];
         fprintf(outfile, "%u\n", results[i-1]);
     }
-    printf("Part 1 profiling for a %d MB, %d-way cache complete, %d trials ran\n", cache_size_MB, set_associativity, max_trials);
-
     fclose(outfile);
+
+    printf("Part 1 profiling for a %d MB, %d-way cache complete, %d trials ran for APLR %d\n", cache_size_MB, set_associativity, max_trials, APLR);
+    print_cache_stats(L3Cache);
     
     return 0;
 }

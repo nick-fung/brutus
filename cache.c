@@ -132,6 +132,7 @@ void mcache_select_leader_sets(MCache *c, uns sets)
 }
 
 bool mcache_access(MCache *c, Addr addr, Flag dirty)
+{
 
     uns   set;
     uns   start;
