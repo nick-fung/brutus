@@ -10,7 +10,7 @@ inline uint32_t f(uint32_t block, uint32_t key) {
 	uint32_t rand = 0;
 	
 	//seedMT(seed_init*key);
-	seedMT(key*key);
+	seedMT(block*key);
 	rand = randomMT();
     return (block^key^(rand & 0xFFFFFF));
     //return (block^key);

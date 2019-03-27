@@ -164,7 +164,6 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     uint32_t left_addr;
     uint32_t right_addr;
 
-    /*
     left_addr = (uint32_t)((tag & 0xFFFFFF000000) >> 24);
     right_addr = (uint32_t)(tag & 0x000000FFFFFF);
     tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
@@ -174,7 +173,6 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
         printf("Turns out Feistel isn't invertible!\n");
         exit(-1);
     }
-    */
 
     // If using CEASER
     if(c->APLR){
