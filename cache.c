@@ -63,6 +63,7 @@ void invalidate_cache(MCache* c)
         c->entries[i].valid=false;
         c->entries[i].NextKey=false;
     }
+
     c->SPtr = 0;
     c->ACtr = 0;
     c->EpochID += 2;
@@ -130,10 +131,7 @@ void mcache_select_leader_sets(MCache *c, uns sets)
     }
 }
 
-
-
 bool mcache_access(MCache *c, Addr addr, Flag dirty)
-{
 
     uns   set;
     uns   start;
@@ -148,11 +146,11 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     Flag NextKey = 0;
 
 
-    // TODO: CODE CHECK
     // If using CEASER
     if(c->APLR){
         // If we reached APLR accesses, we remap a set
-        if(++c->ACtr >= c->APLR){
+        c->ACtr++;
+        if(c->ACtr >= c->APLR){
             set = c->SPtr;
             start = set * c->assocs;
             end = start + c-> assocs;
@@ -170,7 +168,8 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
             }
             // Update set pointer and reset access counter
             c->ACtr = 0;
-            if(++c->SPtr == c->sets){
+            c->SPtr++;
+            if(c->SPtr >= c->sets){
                 c->SPtr = 0;
                 c->EpochID++;
                 // Swap pointers and recreate new keys
@@ -179,10 +178,12 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
                 c->next_keys = tmp;
                 seedMT(c->EpochID+1);
                 for(int round = 0; round < FEISTEL_ROUNDS; round++){
-                    /* As randMT can only provide a 32 bit random number, we iterate on this 2 times per key */
-                    c->next_keys[round] = randomMT();
-                    /* As addresses are PHYSICAL_ADDR long, we need a key PHYSICAL_ADDR/2 in size */
-                    c->next_keys[round] &= 0xFFFFFF; // extracted lower 24 bits
+                    c->next_keys[round] = randomMT() & 0xFFFFFF;
+                }
+                // Need to reset all NextKey bits to 0
+                for(unsigned long long int i = 0; i < (c->sets * c->assocs); i++)
+                {
+                    c->entries[i].NextKey=false;
                 }
             }
         }
@@ -232,7 +233,6 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     c->s_miss++;
     return false;
 }
-
 
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
@@ -352,7 +352,7 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     set  = mcache_get_index(c,tag);
     Flag NextKey = 0;
 
-    // If we are using CEASER
+    // If we are using CEASER check if address indexes into curr epoch sets
     if(c->APLR && (set < c->SPtr || (dirty & NEXTKEY_MASK))){
         tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->next_keys);
         NextKey = 1;

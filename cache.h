@@ -91,7 +91,7 @@ typedef struct MCache {
     // CEASER Modifications
     uns EpochID; // Epoch ID - for seed generation
     uns SPtr; // Set-Relocation Pointer
-    uns64 ACtr; // Access-Counter
+    uns ACtr; // Access-Counter
     uns APLR; // Accesses-Per-Line-Remap
 
     uint32_t *curr_keys;
