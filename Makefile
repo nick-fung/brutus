@@ -7,7 +7,7 @@ OBJ2 = part2.o feistel.o mersenne.o cache.o
 %.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-simPart1: $(OBJ)
+Part1: $(OBJ)
 	$(CC) -o $@ $^ $(CFLAGS) 
 	rm -f $(OBJ)
 

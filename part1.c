@@ -42,8 +42,11 @@ int main(int argc, char *argv[]) {
 
     if(argc >= 4)
         APLR = atoi(argv[3]);
-    if(argc >= 5)
+    if(argc >= 5){
         overflow_size = atoi(argv[4]);
+        // Simulations will take forever otherwise
+    //    max_trials = 1000;
+    }
     
     unsigned int *results = (unsigned int*) calloc(sizeof(unsigned int), num_lines);
     
@@ -53,6 +56,7 @@ int main(int argc, char *argv[]) {
     printf("Number of Sets: %d sets\n", num_sets);
     printf("Number of Trials: %d trials\n", max_trials);
     printf("Accesses Per Line Remapping: %d accesses\n", APLR);
+    printf("Overflow Cache Size: %d lines\n", overflow_size);
     
     
     /* --------------------- Setup the cache ------------------------- */
@@ -103,7 +107,10 @@ int main(int argc, char *argv[]) {
     
     FILE *outfile;
     char *outName = (char*) calloc(256,sizeof(char));
-    sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity, APLR);
+    if(overflow_size)
+        sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity, overflow_size);
+    else
+        sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity, APLR);
     outfile = fopen(outName,"w");
     if(!outfile) {
         perror("fopen");

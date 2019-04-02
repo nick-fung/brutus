@@ -26,8 +26,8 @@ void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, 
     c->fifo_ptr  = (uns *) calloc (sets, sizeof(uns));
 
     //for drrip or dip
-    mcache_select_leader_sets(c,sets);
-    c->psel=(MCACHE_PSEL_MAX+1)/2;
+    //mcache_select_leader_sets(c,sets);
+    //c->psel=(MCACHE_PSEL_MAX+1)/2;
 
     // for CEASER
     c->EpochID = 0;
@@ -383,10 +383,10 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     }
 
     //udpate DRRIP info and select value of ripctr
-    uns ripctr_val=MCACHE_SRRIP_INIT;
+    //uns ripctr_val=MCACHE_SRRIP_INIT;
 
     if(c->repl_policy==REPL_DRRIP){
-        ripctr_val=mcache_drrip_get_ripctrval(c,set);
+        //ripctr_val=mcache_drrip_get_ripctrval(c,set);
     }
 
     if(c->repl_policy==REPL_DIP){
@@ -407,7 +407,7 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
         entry->dirty=TRUE;
     else
         entry->dirty = FALSE;
-    entry->ripctr  = ripctr_val;
+    //entry->ripctr  = ripctr_val;
 
     if(update_lrubits){
         entry->last_access  = c->s_count;
