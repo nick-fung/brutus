@@ -89,7 +89,11 @@ int main(int argc, char *argv[]) {
                 if(victim.valid){
                     results[address]++;
                     if(trial_num % 512 == 0)
+<<<<<<< HEAD
                         printf("Completed Trial Num %d", trial_num);
+=======
+                        printf("Completed Trial Num %d for APLR %d\n", trial_num, APLR);
+>>>>>>> ce223a701b4609b175bdd2c08610344630954c1c
                     break;
                 }
             }
@@ -114,9 +118,10 @@ int main(int argc, char *argv[]) {
         results[i] += results[i-1];
         fprintf(outfile, "%u\n", results[i-1]);
     }
-    printf("Part 1 profiling for a %d MB, %d-way cache complete, %d trials ran\n", cache_size_MB, set_associativity, max_trials);
-
     fclose(outfile);
+
+    printf("Part 1 profiling for a %d MB, %d-way cache complete, %d trials ran for APLR %d\n", cache_size_MB, set_associativity, max_trials, APLR);
+    print_cache_stats(L3Cache);
     
     return 0;
 }
