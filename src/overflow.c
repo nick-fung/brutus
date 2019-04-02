@@ -8,10 +8,10 @@
 #include "mersenne.h"
 #include "cache.h"
 
-#define LINE_SIZE 64
-#define MODE 0
-#define REPL 0
+#define REPL_LRU 0
+#define REPL_RND 1
 
+#define LINE_SIZE 64
 //Physical addresses in modern processors are limited to 48 bits --> 256TB of RAM (Max)
 #define PHYSICAL_ADDR 48
 
@@ -28,9 +28,14 @@ int main(int argc, char *argv[]) {
     /* ---------- We read the parameters for our cache and simulation options ---------- */
     
     if(argc < 3) {
-        fprintf(stderr,"Usage: ./simPart1 CacheSizeMB SetAssociativity APLR OverflowSize\n");
+        fprintf(stderr,"Usage: ./simOverflow [cacheSize] [associativity] [overflowSize] [maxTrials]\n \
+                cacheSize: Size of the cache in MB\n \
+                associativity: Number of ways per cache set\n \
+                overflowSize (Optional): Number of lines in the Overflow cache\n \
+                maxTrials (Optional): Number of trials to perform\n");
         return EXIT_FAILURE;
     }
+
     unsigned int cache_size_MB = atoi(argv[1]);
     unsigned int cache_size = atoi(argv[1]) * (1 << 20);
     unsigned int set_associativity = atoi(argv[2]);
@@ -41,12 +46,9 @@ int main(int argc, char *argv[]) {
     unsigned int overflow_size = 0;
 
     if(argc >= 4)
-        APLR = atoi(argv[3]);
-    if(argc >= 5){
-        overflow_size = atoi(argv[4]);
-        // Simulations will take forever otherwise
-    //    max_trials = 1000;
-    }
+        overflow_size = atoi(argv[3]);
+    if(argc >= 5)
+        max_trials = atoi(argv[4]);
     
     unsigned int *results = (unsigned int*) calloc(sizeof(unsigned int), num_lines);
     
@@ -61,13 +63,13 @@ int main(int argc, char *argv[]) {
     
     /* --------------------- Setup the cache ------------------------- */
     MCache *L3Cache = (MCache*) calloc(1, sizeof(MCache));
-    init_cache(L3Cache, num_sets, set_associativity, REPL, LINE_SIZE, APLR);
+    init_cache(L3Cache, num_sets, set_associativity, REPL_LRU, LINE_SIZE, APLR);
 
     // Use a victim cache with random replacement
     MCache *OverflowCache = NULL;
     if(overflow_size){
         OverflowCache = (MCache*) calloc(1, sizeof(MCache));
-        init_cache(OverflowCache, 1, overflow_size, 1, LINE_SIZE, 0);
+        init_cache(OverflowCache, 1, overflow_size, REPL_RND, LINE_SIZE, 0);
     }
     
     /* ----------------------------Start the trials ------------------------------------ */
@@ -108,9 +110,8 @@ int main(int argc, char *argv[]) {
     FILE *outfile;
     char *outName = (char*) calloc(256,sizeof(char));
     if(overflow_size)
-        sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity, overflow_size);
-    else
-        sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity, APLR);
+        sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity,overflow_size);
+
     outfile = fopen(outName,"w");
     if(!outfile) {
         perror("fopen");

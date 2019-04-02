@@ -11,7 +11,6 @@
 #include "feistel.h"
 #include "mersenne.h"
 
-
 void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, uns APLR)
 {
 
@@ -26,8 +25,11 @@ void init_cache(MCache* c, uns sets, uns assocs, uns repl_policy, uns linesize, 
     c->fifo_ptr  = (uns *) calloc (sets, sizeof(uns));
 
     //for drrip or dip
-    //mcache_select_leader_sets(c,sets);
-    //c->psel=(MCACHE_PSEL_MAX+1)/2;
+    if(sets>1){
+        // Doesnt seem to work for fully associative cache
+        mcache_select_leader_sets(c,sets);
+        c->psel=(MCACHE_PSEL_MAX+1)/2;
+    }
 
     // for CEASER
     c->EpochID = 0;
@@ -155,14 +157,17 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
             set = c->SPtr;
             start = set * c->assocs;
             end = start + c-> assocs;
+            // Remaps all lines
             for (ii=start; ii<end; ii++){
                 MCache_Entry *entry = &c->entries[ii];
                 if(entry->valid && !(entry->NextKey))
                 {
+                    // Invalidates entry
                     entry->valid = false;
                     tag = entry->tag;
                     left_addr = (uint32_t)((tag & 0xFFFFFF000000) >> 24);
                     right_addr = (uint32_t)(tag & 0x000000FFFFFF);
+                    // Installs line in another set, sets next key flag
                     tag = decrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
                     mcache_install(c, tag, 0, (Flag) (entry->dirty | NEXTKEY_MASK));
                 }
@@ -170,10 +175,12 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
             // Update set pointer and reset access counter
             c->ACtr = 0;
             c->SPtr++;
+            // If set pointer reaches end of cache, reset
             if(c->SPtr >= c->sets){
                 c->SPtr = 0;
+                // Update epoch for seed 
                 c->EpochID++;
-                // Swap pointers and recreate new keys
+                // Swap pointers, create new keys for next round
                 uint32_t *tmp = c->curr_keys;
                 c->curr_keys = c->next_keys;
                 c->next_keys = tmp;
@@ -181,11 +188,9 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
                 for(int round = 0; round < FEISTEL_ROUNDS; round++){
                     c->next_keys[round] = randomMT() & 0xFFFFFF;
                 }
-                // Need to reset all NextKey bits to 0
+                // Need to reset all NextKey flags to 0
                 for(unsigned long long int i = 0; i < (c->sets * c->assocs); i++)
-                {
                     c->entries[i].NextKey=false;
-                }
             }
         }
     }
@@ -197,7 +202,7 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
     set  = mcache_get_index(c,tag);
 
-    // If we are using CEASER
+    // If we are using CEASER, we need to use the next keys if set < SPtr
     if(c->APLR && set < c->SPtr){
         tag = encrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->next_keys);
         NextKey = 1;
@@ -235,9 +240,6 @@ bool mcache_access(MCache *c, Addr addr, Flag dirty)
     return false;
 }
 
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
 Flag mcache_probe    (MCache *c, Addr addr)
 {
     uns64 offset = c->lineoffset;
@@ -257,12 +259,6 @@ Flag mcache_probe    (MCache *c, Addr addr)
 
     return FALSE;
 }
-
-
-
-
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
 
 Flag mcache_invalidate    (MCache *c, Addr addr)
 {
@@ -286,10 +282,6 @@ Flag mcache_invalidate    (MCache *c, Addr addr)
     return FALSE;
 }
 
-
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
 void mcache_swap_lines(MCache *c, uns set, uns way_ii, uns way_jj)
 {
     uns   start = set * c->assocs;
@@ -302,12 +294,8 @@ void mcache_swap_lines(MCache *c, uns set, uns way_ii, uns way_jj)
 
 }
 
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
 Flag mcache_mark_dirty    (MCache *c, Addr tag)
 {
-    //uns64 offset = c->lineoffset;
     uns   set  = mcache_get_index(c,tag);
     uns   start = set * c->assocs;
     uns   end   = start + c->assocs;
@@ -324,13 +312,6 @@ Flag mcache_mark_dirty    (MCache *c, Addr tag)
 
     return FALSE;
 }
-
-
-////////////////////////////////////////////////////////////////////
-
-
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
 
 MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
 {
@@ -383,10 +364,10 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     }
 
     //udpate DRRIP info and select value of ripctr
-    //uns ripctr_val=MCACHE_SRRIP_INIT;
+    uns ripctr_val=MCACHE_SRRIP_INIT;
 
     if(c->repl_policy==REPL_DRRIP){
-        //ripctr_val=mcache_drrip_get_ripctrval(c,set);
+        ripctr_val=mcache_drrip_get_ripctrval(c,set);
     }
 
     if(c->repl_policy==REPL_DIP){
@@ -407,7 +388,7 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
         entry->dirty=TRUE;
     else
         entry->dirty = FALSE;
-    //entry->ripctr  = ripctr_val;
+    entry->ripctr  = ripctr_val;
 
     if(update_lrubits){
         entry->last_access  = c->s_count;
@@ -432,12 +413,8 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     return evicted_entry;
 }
 
-
-
-
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
-Flag mcache_dip_check_lru_update(MCache *c, uns set){
+Flag mcache_dip_check_lru_update(MCache *c, uns set)
+{
     Flag update_lru=TRUE;
 
     if(c->is_leader_p0[set]){
@@ -467,9 +444,8 @@ Flag mcache_dip_check_lru_update(MCache *c, uns set){
     return update_lru;
 }
 
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
-uns mcache_drrip_get_ripctrval(MCache *c, uns set){
+uns mcache_drrip_get_ripctrval(MCache *c, uns set)
+{
     uns ripctr_val=MCACHE_SRRIP_INIT;
 
     if(c->is_leader_p0[set]){
@@ -499,10 +475,6 @@ uns mcache_drrip_get_ripctrval(MCache *c, uns set){
 
     return ripctr_val;
 }
-
-
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
 
 uns mcache_find_victim (MCache *c, uns set)
 {
@@ -539,10 +511,6 @@ uns mcache_find_victim (MCache *c, uns set)
 
 }
 
-
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
-
 uns mcache_find_victim_lru (MCache *c,  uns set)
 {
     uns start = set   * c->assocs;
@@ -560,9 +528,6 @@ uns mcache_find_victim_lru (MCache *c,  uns set)
     return lowest;
 }
 
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
-
 uns mcache_find_victim_rnd (MCache *c,  uns set)
 {
     uns start = set   * c->assocs;
@@ -570,11 +535,6 @@ uns mcache_find_victim_rnd (MCache *c,  uns set)
 
     return  victim;
 }
-
-
-
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
 
 uns mcache_find_victim_srrip (MCache *c,  uns set)
 {
@@ -601,10 +561,6 @@ uns mcache_find_victim_srrip (MCache *c,  uns set)
     return  victim;
 }
 
-
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
-
 uns mcache_find_victim_fifo (MCache *c,  uns set)
 {
     uns start = set   * c->assocs;
@@ -612,10 +568,8 @@ uns mcache_find_victim_fifo (MCache *c,  uns set)
     return retval;
 }
 
-////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////
-
-uns mcache_get_index(MCache *c, Addr addr){
+uns mcache_get_index(MCache *c, Addr addr)
+{
     uns retval;
 
     switch(c->index_policy){
@@ -631,7 +585,8 @@ uns mcache_get_index(MCache *c, Addr addr){
     return retval;
 }
 
-void print_cache_stats(MCache * llcache){
+void print_cache_stats(MCache * llcache)
+{
     uns64 totLookups_type = 0, totMisses_type = 0, totHits_type = 0;
     uns64 totLookups = 0, totMisses = 0, totHits = 0;
 
@@ -643,7 +598,6 @@ void print_cache_stats(MCache * llcache){
     printf("\tLine Size:      %dB\n", llcache->linesize);
     printf("\tAssociativity:  %d\n", llcache->assocs);
     printf("\tTot # Sets:     %d\n", llcache->sets);
-    //printf("\tTot # Threads:  %d\n\n", NUMCORES);
     
     printf("Cache Statistics: \n\n");
     
