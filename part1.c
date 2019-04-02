@@ -89,11 +89,7 @@ int main(int argc, char *argv[]) {
                 if(victim.valid){
                     results[address]++;
                     if(trial_num % 512 == 0)
-<<<<<<< HEAD
                         printf("Completed Trial Num %d", trial_num);
-=======
-                        printf("Completed Trial Num %d for APLR %d\n", trial_num, APLR);
->>>>>>> ce223a701b4609b175bdd2c08610344630954c1c
                     break;
                 }
             }
