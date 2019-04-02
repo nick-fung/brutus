@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     /* ---------- We read the parameters for our cache and simulation options ---------- */
     
     if(argc < 3) {
-        fprintf(stderr,"Usage: ./simPart1 CacheSizeMB SetAssociativity APLR\n");
+        fprintf(stderr,"Usage: ./simPart1 CacheSizeMB SetAssociativity APLR OverflowSize\n");
         return EXIT_FAILURE;
     }
     unsigned int cache_size_MB = atoi(argv[1]);
@@ -38,9 +38,12 @@ int main(int argc, char *argv[]) {
     unsigned int num_sets = num_lines / set_associativity;
     unsigned int max_trials = 10000;
     unsigned int APLR = 0;
+    unsigned int overflow_size = 0;
 
-    if(argc == 4)
+    if(argc >= 4)
         APLR = atoi(argv[3]);
+    if(argc >= 5)
+        overflow_size = atoi(argv[4]);
     
     unsigned int *results = (unsigned int*) calloc(sizeof(unsigned int), num_lines);
     
@@ -55,6 +58,13 @@ int main(int argc, char *argv[]) {
     /* --------------------- Setup the cache ------------------------- */
     MCache *L3Cache = (MCache*) calloc(1, sizeof(MCache));
     init_cache(L3Cache, num_sets, set_associativity, REPL, LINE_SIZE, APLR);
+
+    // Use a victim cache with random replacement
+    MCache *OverflowCache = NULL;
+    if(overflow_size){
+        OverflowCache = (MCache*) calloc(1, sizeof(MCache));
+        init_cache(OverflowCache, 1, overflow_size, 1, LINE_SIZE, 0);
+    }
     
     /* ----------------------------Start the trials ------------------------------------ */
     uint64_t address;
@@ -74,18 +84,19 @@ int main(int argc, char *argv[]) {
             if(!L3Hit){
                 victim=install(L3Cache, address, 0,true);
                 /* -------------  Step 4. This set overflows -------------  */
+                if(OverflowCache && victim.valid)
+                    victim = install(OverflowCache, victim.tag, 0, victim.dirty);
                 if(victim.valid){
                     results[address]++;
-                    if(trial_num % 256 == 0){
-                        printf(".");
-                        if(trial_num % 512 == 0)
-                            printf("Completed Trial Num %d", trial_num);
-                    }
+                    if(trial_num % 512 == 0)
+                        printf("Completed Trial Num %d", trial_num);
                     break;
                 }
             }
         }
         invalidate_cache(L3Cache);
+        if(overflow_size)
+            invalidate_cache(OverflowCache);
     }
     /* ------------------------  End the trials and write output to files  --------------------- */
     

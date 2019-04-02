@@ -132,6 +132,7 @@ void mcache_select_leader_sets(MCache *c, uns sets)
 }
 
 bool mcache_access(MCache *c, Addr addr, Flag dirty)
+{
 
     uns   set;
     uns   start;
@@ -418,6 +419,14 @@ MCache_Entry mcache_install(MCache *c, Addr addr, Addr pc, Flag dirty)
     c->touched_setid=set;
     c->touched_wayid=victim-(set*c->assocs);
 
+    tag = evicted_entry.tag;
+    left_addr = (uint32_t)((addr & 0xFFFFFF000000) >> 24);
+    right_addr = (uint32_t)(addr & 0x000000FFFFFF);
+    if(!evicted_entry.NextKey)
+        tag = decrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->curr_keys);
+    else
+        tag = decrypt(left_addr, right_addr, FEISTEL_ROUNDS, c->next_keys);
+    evicted_entry.tag = tag;
 
 
     return evicted_entry;
