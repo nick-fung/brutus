@@ -95,7 +95,7 @@ int main(int argc, char *argv[]) {
                 if(victim.valid){
                     results[address]++;
                     if(trial_num % 512 == 0)
-                        printf("Completed Trial Num %d", trial_num);
+                        printf("Completed Trial #%d\n", trial_num);
                     break;
                 }
             }
@@ -109,8 +109,9 @@ int main(int argc, char *argv[]) {
     
     FILE *outfile;
     char *outName = (char*) calloc(256,sizeof(char));
-    if(overflow_size)
-        sprintf(outName, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity,overflow_size);
+    //char *outName2 = (char*) calloc(256,sizeof(char));
+    sprintf(outName, "../results/%dMB_%dway_%d.csv",cache_size_MB,set_associativity,overflow_size);
+    //sprintf(outName2, "part1_results_%d_%d_%d.csv",cache_size_MB,set_associativity,overflow_size);
 
     outfile = fopen(outName,"w");
     if(!outfile) {
@@ -124,7 +125,9 @@ int main(int argc, char *argv[]) {
     }
     fclose(outfile);
 
-    printf("Part 1 profiling for a %d MB, %d-way cache complete, %d trials ran for APLR %d\n", cache_size_MB, set_associativity, max_trials, APLR);
+
+    printf("Simulation complete\n");
+    //printf("Simulation for a %d MB, %d-way cache complete, %d trials ran\n", cache_size_MB, set_associativity, max_trials);
     print_cache_stats(L3Cache);
     
     return 0;
